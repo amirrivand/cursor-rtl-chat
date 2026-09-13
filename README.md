@@ -1,29 +1,37 @@
 # Cursor RTL Chat Fix
 
-Cursor's built-in AI chat panel is part of its core app UI, not a
-standard VS Code extension surface, so a normal marketplace extension
-can't reach it. This is a small local patch instead: it injects a
-script into Cursor's own `workbench.html` that watches the chat panel
-and automatically sets right-to-left direction on any paragraph that
-contains Arabic/Persian (or other RTL) text, while leaving code blocks
-and the editor untouched. It also fixes the chat input box so it flips
-to RTL while you type Arabic/Persian.
+Cursor's built-in AI chat panel isn't a normal VS Code extension surface,
+so a marketplace extension can't reach it directly. This is a small local
+patch: it injects a script into Cursor's own HTML files that detects
+Arabic/Persian (or other RTL) text and sets direction per paragraph,
+without touching code blocks or the editor.
+
+The chat panel's message content most likely renders inside a sandboxed
+webview (a nested iframe), not the main window document — so this version
+patches **both** `workbench.html` and any generic webview-hosting pages
+found under Cursor's app folder, and the injected script also tries to
+reach into same-origin nested iframes inside those.
 
 ## Install
 
 1. Quit Cursor completely.
-2. From a terminal, in the folder with these two files, run:
+2. In a terminal, in the folder with these files, run:
    ```
    node patch-cursor-rtl.js
    ```
-   It auto-detects Cursor's install location on macOS/Windows/Linux.
-   If it can't find it, open Cursor → Help → Toggle Developer Tools →
-   Sources tab, search for `workbench.html` to get the exact path, then run:
+   It auto-detects Cursor's install location on macOS/Windows/Linux and
+   patches every matching HTML file it finds (you'll see a list printed).
+
+   If it reports Cursor's app is packed as `app.asar` (a single archive
+   file, not a folder), it will print unpack instructions — this script
+   only edits plain files, not asar archives.
+
+   If it can't find the app folder at all, open Cursor → Help → Toggle
+   Developer Tools → Sources tab to find the real path, then run:
    ```
-   node patch-cursor-rtl.js --path "/full/path/to/workbench.html"
+   node patch-cursor-rtl.js --root "/full/path/to/resources/app"
    ```
-3. Reopen Cursor. Arabic/Persian text in the chat panel should now
-   render right-to-left automatically, paragraph by paragraph.
+3. Reopen Cursor and test with some Arabic/Persian text in the chat.
 
 ## Revert
 
@@ -31,18 +39,24 @@ to RTL while you type Arabic/Persian.
 node patch-cursor-rtl.js --revert
 ```
 
-## Notes / caveats
+## If it still doesn't work
 
-- This edits Cursor's own application files on your machine — it's
-  not something installable from the Marketplace, and it isn't
-  malicious, but Cursor may show an "installation appears modified"
-  notice afterward. That's expected and safe to dismiss.
-- Every Cursor update overwrites `workbench.html`, so you'll need to
-  re-run the patch after updating.
-- If some part of the chat still doesn't flip correctly (e.g. Cursor
-  changes its internal DOM structure in a future version), open dev
-  tools on the chat panel, inspect the element in question, and let
-  me know the class name — the detection in `rtl-injector.js` is
-  written generically (it just looks for RTL Unicode characters in
-  any text-bearing element), but it can be tightened to also target
-  specific chat containers if the generic pass misses something.
+This means the chat content lives somewhere this script's heuristics
+didn't find (Cursor's internals aren't public, so this is a best-effort
+pattern match, not a guarantee). To pin it down exactly:
+
+1. Right-click inside the chat panel → Inspect Element.
+2. If that opens a devtools window whose top document URL is something
+   like `vscode-webview://...` (different from the main window), the
+   chat is indeed in its own webview — note that URL.
+3. In that devtools' Sources/Application tab, find the actual HTML file
+   or inline `<script>` that sets up that page, and tell me its path or
+   content — the injector can be targeted at it directly instead of
+   relying on the generic search.
+
+## Notes
+
+- This edits Cursor's own app files locally — not publishable to a
+  marketplace, not malicious, but Cursor may show a "modified
+  installation" notice after patching. Safe to dismiss.
+- Re-run after every Cursor update (updates overwrite these files).
